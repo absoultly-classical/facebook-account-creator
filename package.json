@@ -1,0 +1,23 @@
+{
+  "name": "facebook-account-creator",
+  "version": "1.0.0",
+  "description": "Browser-based Facebook account registration automation",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --check register-loop.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@faker-js/faker": "^10.1.0",
+    "axios": "^1.13.2",
+    "axios-cookiejar-support": "^6.0.5",
+    "cheerio": "^1.1.2",
+    "faker": "^6.6.6",
+    "form-data": "^4.0.5",
+    "googleapis": "^169.0.0",
+    "puppeteer": "^24.34.0",
+    "tough-cookie": "^6.0.0"
+  }
+}

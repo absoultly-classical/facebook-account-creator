@@ -1,0 +1,16 @@
+node_modules/
+.env
+*.log
+# Credentials and local account/session data
+*.env.*
+!*.env.example
+service_account.json
+*session*.json
+*cookie*.json
+*results*.jsonl
+results.jsonl
+probe-*
+dola-*
+batch-results-*.jsonl
+generated-*/
+photos/
