@@ -5,6 +5,7 @@ const path = require('path');
 const axios = require('axios');
 const { google } = require('googleapis');
 const { execFileSync } = require('child_process');
+const { generateTotp } = require('./totp');
 
 // ==================== KONFIGURASI ====================
 const CONFIG = {
@@ -21,6 +22,7 @@ const CONFIG = {
   maxRegistrations: Number(process.env.MAX_REGISTRATIONS || 1),
   executablePath: process.env.CHROME_PATH || undefined,
   uploadProfilePhoto: process.env.UPLOAD_PROFILE_PHOTO === 'true',
+  enableTotp2FA: process.env.ENABLE_TOTP_2FA === 'true',
   resultsPath: process.env.RESULTS_PATH || path.join(__dirname, 'results.jsonl'),
   vmail: {
     local: process.env.VMAIL_LOCAL === 'true',
@@ -185,6 +187,86 @@ function generateUserData() {
 }
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function clickVisibleText(page, pattern) {
+  return page.evaluate((source, flags) => {
+    const regex = new RegExp(source, flags);
+    const element = Array.from(document.querySelectorAll('a, button, [role="button"]'))
+      .find((item) => {
+        const rect = item.getBoundingClientRect();
+        const text = (item.innerText || item.getAttribute('aria-label') || '').trim();
+        return rect.width > 0 && rect.height > 0 && !item.disabled && regex.test(text);
+      });
+    if (!element) return false;
+    element.click();
+    return true;
+  }, pattern.source, pattern.flags);
+}
+
+async function enableTotp2FA(page, password, uid) {
+  await page.goto('https://www.facebook.com/security/2fac/setup/intro/', {
+    waitUntil: 'networkidle2', timeout: 60000,
+  });
+  await delay(3000);
+
+  let text = await page.evaluate(() => document.body?.innerText || '');
+  if (/checkpoint|验证你是真人|confirm you.?re human|security check/i.test(`${page.url()}\n${text}`)) {
+    throw new Error('checkpoint_required');
+  }
+
+  if (/开始|start|get started/i.test(text)) {
+    if (!await clickVisibleText(page, /^(开始|start|get started)$/i)) {
+      throw new Error('start_button_not_found');
+    }
+    await delay(4000);
+  }
+
+  const passwordInput = await page.$('input[type="password"]');
+  if (passwordInput) {
+    await passwordInput.type(password, { delay: 80 });
+    if (!await clickVisibleText(page, /^(继续|continue)$/i)) {
+      throw new Error('password_continue_button_not_found');
+    }
+    await delay(5000);
+  }
+
+  const methods = await page.$$('input[name="twoFactorMethod"]');
+  if (!methods.length) throw new Error('authentication_method_not_found');
+  await methods[0].click();
+  if (!await clickVisibleText(page, /^(继续|continue)$/i)) {
+    throw new Error('method_continue_button_not_found');
+  }
+  await delay(4000);
+
+  text = await page.evaluate(() => document.body?.innerText || '');
+  const secretMatch = text.match(/\b(?:[A-Z2-7]{4}\s+){3}[A-Z2-7]{4}\b/);
+  if (!secretMatch) throw new Error('totp_secret_not_found');
+  const secret = secretMatch[0].replace(/\s+/g, '');
+
+  if (!await clickVisibleText(page, /输入验证码|enter code/i)) {
+    throw new Error('enter_code_button_not_found');
+  }
+  const codeInput = await page.waitForSelector('input[type="text"], input[inputmode="numeric"]', {
+    visible: true, timeout: 10000,
+  });
+  const secondsRemaining = 30 - (Math.floor(Date.now() / 1000) % 30);
+  if (secondsRemaining < 6) await delay((secondsRemaining + 1) * 1000);
+  await codeInput.type(generateTotp(secret), { delay: 100 });
+  if (!await clickVisibleText(page, /^(下一页|next|继续|continue)$/i)) {
+    throw new Error('totp_next_button_not_found');
+  }
+  await delay(5000);
+
+  text = await page.evaluate(() => document.body?.innerText || '');
+  if (!/双重验证设置成功|two-factor authentication.*(?:on|enabled|success)|successfully set up/i.test(text)) {
+    throw new Error('totp_confirmation_failed');
+  }
+  await clickVisibleText(page, /^(完成|done|finish)$/i).catch(() => false);
+  return {
+    secret,
+    uri: `otpauth://totp/Facebook:${encodeURIComponent(uid)}?secret=${secret}&issuer=Facebook`,
+  };
+}
 
 // Cek IP via proxy - return { ip, country, cc, isIndonesia }
 async function checkIP(page) {
@@ -402,6 +484,10 @@ async function registerFacebook() {
   let cookieString = '';
   let success = false;
   let uid = '';
+  let twoFactorEnabled = false;
+  let totpSecret = '';
+  let totpUri = '';
+  let twoFactorError = '';
 
   console.log('\n' + '='.repeat(60));
   console.log('📋 Data registrasi:');
@@ -720,6 +806,23 @@ async function registerFacebook() {
       } else {
         console.log('📷 Tidak ada foto di folder photos/, skip upload foto');
       }
+
+      if (CONFIG.enableTotp2FA) {
+        console.log('🔐 Mengaktifkan TOTP 2FA...');
+        try {
+          const twoFactor = await enableTotp2FA(page, userData.password, uid);
+          twoFactorEnabled = true;
+          totpSecret = twoFactor.secret;
+          totpUri = twoFactor.uri;
+          console.log('✅ TOTP 2FA berhasil diaktifkan');
+        } catch (error) {
+          twoFactorError = error.message;
+          console.log(`⚠️ TOTP 2FA tidak diaktifkan: ${twoFactorError}`);
+        }
+
+        const refreshedCookies = await page.cookies();
+        cookieString = refreshedCookies.map(cookie => `${cookie.name}=${cookie.value}`).join(';');
+      }
     }
 
   } catch (error) {
@@ -755,6 +858,10 @@ async function registerFacebook() {
     password: userData.password,
     cookieString,
     mailboxId: userData.mailboxId || '',
+    twoFactorEnabled,
+    totpSecret,
+    totpUri,
+    twoFactorError,
   };
 }
 
@@ -821,5 +928,4 @@ async function main() {
   console.log('\nProbe run complete.');
 }
 
-// Jalankan
 main().catch(console.error);

@@ -37,6 +37,7 @@ npm ci
 | `HEADLESS` | 设为 `false` 以显示浏览器窗口 | `true` |
 | `CHROME_PATH` | Chrome/Chromium 可执行文件路径 | Puppeteer 默认路径 |
 | `PROBE_ONLY` | 记录注册流程探测结果后停止 | `true` |
+| `ENABLE_TOTP_2FA` | 注册成功后开通身份验证器 TOTP | `false` |
 | `MAX_REGISTRATIONS` | 每个进程的最大尝试次数 | `1` |
 | `RESULTS_PATH` | JSONL 输出文件路径 | `results.jsonl` |
 | `PROXY_HOST` / `PROXY_PORT` | 代理地址 | 未设置 / `823` |
@@ -72,9 +73,26 @@ node register-loop.js
 
 将 `PROBE_ONLY` 设为 `false` 可继续执行探测阶段之后的流程。`run-vmail-batch.ps1` 是供 Windows 使用的 SSH 邮箱 helper 启动脚本；调用时传入 `-Domain` 和 `-SshHost`，并在环境中设置 `VMAIL_HELPER_PATH` 与 `VMAIL_PYTHON_PATH`。
 
+## TOTP 双重验证
+
+同时设置 `ENABLE_TOTP_2FA=true` 和 `PROBE_ONLY=false`，可在注册成功后开通身份验证器。脚本会进入双重验证设置流程、重新输入账户密码、选择身份验证应用、提取 Base32 密钥、生成首个六位 TOTP 动态码并确认开通。
+
+JSONL 结果会记录 `twoFactorEnabled`、`totpSecret`、`totpUri` 和 `twoFactorError`。在平台提供已配置的 2FA 方式时，新设备登录可使用由 `totpSecret` 生成的动态码，而无需依赖邮箱验证码。部分新账户会在开通过程中触发 checkpoint；平台也可能独立要求邮箱、设备或身份验证，因此 TOTP 不能保证完全取消其他验证。
+
+使用已保存的密钥生成当前六位验证码：
+
+```powershell
+$env:TOTP_SECRET = 'RESULTS_中的_BASE32_密钥'
+npm run totp
+```
+
+```sh
+TOTP_SECRET='RESULTS_中的_BASE32_密钥' npm run totp
+```
+
 ## 输出与数据
 
-运行过程会向 `RESULTS_PATH` 追加 JSON Lines。成功结果可能包含邮箱地址、密码、账户标识符和会话 Cookie。请将结果和诊断文件视为敏感数据，限制本地访问权限，不要提交或分享。`.gitignore` 已排除常见的本地结果、会话、抓取文件和凭据文件。
+运行过程会向 `RESULTS_PATH` 追加 JSON Lines。成功结果可能包含邮箱地址、密码、账户标识符、会话 Cookie 和 TOTP 密钥。请将结果和诊断文件视为敏感数据，限制本地访问权限，不要提交或分享。`.gitignore` 已排除常见的本地结果、会话、抓取文件和凭据文件。
 
 运行语法检查：
 

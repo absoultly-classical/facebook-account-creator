@@ -4,7 +4,8 @@
   "description": "Browser-based Facebook account registration automation",
   "main": "index.js",
   "scripts": {
-    "test": "node --check register-loop.js"
+    "test": "node --check register-loop.js && node test-totp.js",
+    "totp": "node totp.js"
   },
   "keywords": [],
   "author": "",

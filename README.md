@@ -37,6 +37,7 @@ The project reads configuration from process environment variables. `.env.exampl
 | `HEADLESS` | Set to `false` to show the browser | `true` |
 | `CHROME_PATH` | Chrome/Chromium executable path | Puppeteer's default |
 | `PROBE_ONLY` | Stop after recording the registration-flow probe | `true` |
+| `ENABLE_TOTP_2FA` | Enroll an authenticator-app TOTP secret after registration | `false` |
 | `MAX_REGISTRATIONS` | Maximum attempts per process | `1` |
 | `RESULTS_PATH` | JSONL output path | `results.jsonl` |
 | `PROXY_HOST` / `PROXY_PORT` | Proxy endpoint | unset / `823` |
@@ -72,9 +73,26 @@ node register-loop.js
 
 Set `PROBE_ONLY=false` to continue past the probe stage. `run-vmail-batch.ps1` is a Windows convenience wrapper for SSH-backed mailbox helpers; pass `-Domain` and `-SshHost`, and set `VMAIL_HELPER_PATH` and `VMAIL_PYTHON_PATH` in the environment before invoking it.
 
+## TOTP two-factor authentication
+
+Set `ENABLE_TOTP_2FA=true` together with `PROBE_ONLY=false` to enroll an authenticator app after a successful registration. The script opens the two-factor setup flow, re-enters the account password, selects the authenticator-app method, extracts the Base32 secret, generates the first six-digit TOTP code, and confirms enrollment.
+
+The JSONL result records `twoFactorEnabled`, `totpSecret`, `totpUri`, and `twoFactorError`. A new-device login can use a code generated from `totpSecret` instead of relying on an email code when the platform offers the configured 2FA method. Enrollment can still be blocked by an account checkpoint, and the platform may independently request email, device, or identity verification.
+
+Generate the current six-digit code from a saved secret:
+
+```powershell
+$env:TOTP_SECRET = 'BASE32_SECRET_FROM_RESULTS'
+npm run totp
+```
+
+```sh
+TOTP_SECRET='BASE32_SECRET_FROM_RESULTS' npm run totp
+```
+
 ## Output and data
 
-The run appends JSON Lines to `RESULTS_PATH`. Successful results can include email addresses, passwords, account identifiers, and session cookies. Treat the output and diagnostic artifacts as secrets: store them locally with restricted access and do not commit or share them. `.gitignore` excludes common local result, session, capture, and credential files.
+The run appends JSON Lines to `RESULTS_PATH`. Successful results can include email addresses, passwords, account identifiers, session cookies, and TOTP secrets. Treat the output and diagnostic artifacts as secrets: store them locally with restricted access and do not commit or share them. `.gitignore` excludes common local result, session, capture, and credential files.
 
 Run the syntax check with:
 
