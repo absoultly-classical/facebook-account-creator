@@ -1,5 +1,7 @@
 # Facebook Account Creator
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Node.js and Puppeteer automation for a browser-based Facebook account-registration workflow. The script supports bounded runs, configurable browser/proxy settings, mailbox verification integrations, and optional Google Sheets output.
 
 By default, the script runs in probe mode (`PROBE_ONLY=true`): it inspects the registration flow, records diagnostic artifacts, and stops before verification handling.
